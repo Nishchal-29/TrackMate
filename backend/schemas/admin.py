@@ -103,7 +103,9 @@ class TeamMemberStatus(BaseModel):
     user_id: uuid.UUID
     full_name: str
     email: str
+    role: str | None = None
     department: str | None = None
+    sheet_id: uuid.UUID | None = None
     sheet_status: GoalSheetStatus | None = None
     goals_count: int = 0
     total_weightage: Decimal = Decimal("0")

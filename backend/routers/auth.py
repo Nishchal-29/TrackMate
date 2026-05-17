@@ -34,6 +34,8 @@ class RegisterRequest(BaseModel):
     password: str
     full_name: str
     role: str = "employee"  # employee | manager | admin
+    department: str | None = None
+    manager_email: str | None = None  # Resolved to manager_id
 
 
 class AuthResponse(BaseModel):
@@ -82,11 +84,24 @@ async def register(
     except ValueError:
         raise HTTPException(status_code=422, detail=f"Invalid role: {body.role}")
 
+    # Resolve manager_email to manager_id
+    manager_id = None
+    if body.manager_email:
+        mgr_result = await db.execute(
+            select(User).where(User.email == body.manager_email)
+        )
+        manager = mgr_result.scalar_one_or_none()
+        if manager is None:
+            raise HTTPException(status_code=422, detail=f"Manager not found: {body.manager_email}")
+        manager_id = manager.id
+
     user = User(
         azure_oid=f"local-{uuid.uuid4().hex[:12]}",
         email=body.email,
         full_name=body.full_name,
         role=role,
+        department=body.department,
+        manager_id=manager_id,
         password_hash=_hash_password(body.password),
     )
     db.add(user)
@@ -100,6 +115,7 @@ async def register(
             "email": user.email,
             "name": user.full_name,
             "role": user.role.value,
+            "department": user.department,
         },
     )
 

@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from database import get_db
-from middleware.auth import get_current_user, require_manager
+# CHANGE: Import get_current_user instead of require_manager
+from middleware.auth import get_current_user
 from models.user import User
 from models.goal import Goal
 from models.goal_sheet import GoalSheet
@@ -64,6 +65,7 @@ async def _get_export_data(
     if quarter:
         query = query.where(Achievement.quarter == quarter)
 
+    # This handles the secure data scoping perfectly!
     if current_user.role == UserRole.manager:
         query = query.where(User.manager_id == current_user.id)
     elif current_user.role == UserRole.employee:
@@ -116,7 +118,8 @@ async def _get_export_data(
     summary="Export achievement data as CSV or XLSX",
 )
 async def export_achievements(
-    current_user: Annotated[CurrentUser, Depends(require_manager)],
+    # CHANGE: Replaced require_manager with get_current_user so all roles can access
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     financial_year: str = Query(default="FY2025-26"),
     quarter: str | None = None,
@@ -124,7 +127,7 @@ async def export_achievements(
 ):
     """
     Export achievement data as CSV or XLSX file.
-    Admin sees all data; Manager sees only their team.
+    Admin sees all data; Manager sees only their team; Employee sees only their own.
     """
     rows = await _get_export_data(db, current_user, financial_year, quarter)
 

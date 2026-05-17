@@ -138,7 +138,7 @@ async def get_sheet(
         if employee and employee.manager_id != current_user.id and sheet.employee_id != current_user.id:
             raise HTTPException(status_code=403, detail="You can only view your team's goal sheets.")
 
-    return shee
+    return sheet
 
 @router.post(
     "/{sheet_id}/goals",
@@ -480,7 +480,6 @@ async def reject_sheet(
 
     return sheet
 
-
 @router.post(
     "/{sheet_id}/unlock",
     response_model=GoalSheetResponse,
@@ -508,13 +507,22 @@ async def unlock_sheet(
             detail={"detail": "Sheet is not locked.", "code": "NOT_LOCKED"},
         )
 
+    # 1. Capture the old status before changing it for the audit log
+    old_status = sheet.status 
+
+    # 2. Update both the locked flag AND revert the status back to draft
     sheet.locked = False
+    sheet.status = "draft" 
     await db.flush()
 
+    # 3. Include both changes in the audit log delta
     await write_audit_log(
         db, "goal_sheet", sheet.id, "unlock",
         current_user.id, current_user.role.value,
-        delta={"locked": {"old": True, "new": False}},
+        delta={
+            "locked": {"old": True, "new": False},
+            "status": {"old": old_status, "new": "draft"}
+        },
         reason=body.reason,
     )
 

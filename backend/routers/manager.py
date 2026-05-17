@@ -39,12 +39,18 @@ async def get_team(
     financial_year: str | None = None,
 ):
     """Get all direct reports with their goal sheet status summary."""
-    result = await db.execute(
-        select(User).where(
+    # Admins see all employees; managers see only their direct reports
+    if current_user.role == UserRole.admin:
+        query = select(User).where(
+            User.is_active == True,
+            User.id != current_user.id,
+        )
+    else:
+        query = select(User).where(
             User.manager_id == current_user.id,
             User.is_active == True,
         )
-    )
+    result = await db.execute(query)
     reports = result.scalars().all()
 
     team_status = []
@@ -85,6 +91,7 @@ async def get_team(
             full_name=user.full_name,
             email=user.email,
             department=user.department,
+            sheet_id=sheet.id if sheet else None,
             sheet_status=sheet.status if sheet else None,
             goals_count=goals_count,
             total_weightage=total_weightage,
