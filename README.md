@@ -1,36 +1,10 @@
 
 
-<h1 align="center">TrackMate — Enterprise Goal Setting & Tracking Portal</h1>
+<h1 align="center">TrackMate — Goal Setting & Tracking Portal</h1>
 
 <p align="center">
-  <strong>A full-stack, production-grade goal management system that transforms how organizations set, track, and achieve their objectives.</strong>
+  <strong>(A full-stack, production-grade goal management system that transforms how organizations set, track, and achieve their objectives.)</strong>
 </p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" />
-  <img src="https://img.shields.io/badge/React_19-61DAFB?style=flat-square&logo=react&logoColor=black" />
-  <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white" />
-  <img src="https://img.shields.io/badge/TailwindCSS_4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" />
-  <img src="https://img.shields.io/badge/Azure_AD-0078D4?style=flat-square&logo=microsoftazure&logoColor=white" />
-  <img src="https://img.shields.io/badge/Vite_8-646CFF?style=flat-square&logo=vite&logoColor=white" />
-</p>
-
----
-
-## Table of Contents
-
-- [The Problem](#-the-problem)
-- [Our Solution](#-our-solution)
-- [Architecture](#-architecture)
-- [Tech Stack](#-tech-stack)
-- [Features](#-features)
-- [Project Structure](#-project-structure)
-- [Getting Started](#-getting-started)
-- [API Reference](#-api-reference)
-- [Authentication](#-authentication)
-- [Role-Based Access](#-role-based-access)
-- [Business Rules](#-business-rules)
-- [Screenshots](#-screenshots)
 
 ---
 
@@ -81,7 +55,7 @@ Organizations face critical challenges in goal management:
 
 ---
 
-## 🏗 Architecture
+## Architecture
 
 ```
                     ┌─────────────────────────────────────┐
@@ -204,7 +178,7 @@ Organizations face critical challenges in goal management:
 ## Project Structure
 
 ```
-goal-portal/
+TrackMate/
 ├── backend/
 │   ├── main.py                          # FastAPI app entry point
 │   ├── database.py                      # Async engine + session factory
@@ -283,90 +257,6 @@ goal-portal/
 ```
 
 ---
-
-## Getting Started
-
-### Prerequisites
-
-- **Python** 3.11+
-- **Node.js** 18+
-- **PostgreSQL** 15+ (or Supabase account)
-- **Azure AD** tenant (optional — local auth works without it)
-
-### 1. Clone & Setup Backend
-
-```bash
-git clone https://github.com/Nishchal-29/TrackMate.git
-cd TrackMate/goal-portal/backend
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your DATABASE_URL, AZURE_TENANT_ID, AZURE_CLIENT_ID
-```
-
-### 2. Setup Database
-
-```bash
-# Run migrations
-alembic upgrade head
-
-# Seed test accounts (optional)
-python -c "
-import asyncio, hashlib
-from sqlalchemy import text
-from database import async_engine
-
-def h(pw):
-    return hashlib.sha256(f'trackmate-salt:{pw}'.encode()).hexdigest()
-
-async def seed():
-    async with async_engine.begin() as conn:
-        for email, name, role, pw in [
-            ('employee@trackmate.com', 'Employee User', 'employee', 'employee123'),
-            ('manager@trackmate.com', 'Manager User', 'manager', 'manager123'),
-            ('admin@trackmate.com', 'Admin User', 'admin', 'admin123'),
-        ]:
-            await conn.execute(text('''
-                INSERT INTO users (id, azure_oid, email, full_name, role, password_hash, department, is_active, created_at, updated_at)
-                VALUES (gen_random_uuid(), :oid, :email, :name, :role, :pw, 'Engineering', true, now(), now())
-                ON CONFLICT (email) DO NOTHING
-            '''), {'oid': f'local-{role}', 'email': email, 'name': name, 'role': role, 'pw': h(pw)})
-asyncio.run(seed())
-"
-```
-
-### 3. Setup Frontend
-
-```bash
-cd ../frontend
-
-# Install dependencies
-npm install
-
-# Configure environment
-# Edit .env with your VITE_API_URL and Azure AD credentials
-```
-
-### 4. Run Development Servers
-
-```bash
-# Terminal 1 — Backend (port 8000)
-cd backend && source venv/bin/activate
-uvicorn main:app --reload --port 8000
-
-# Terminal 2 — Frontend (port 5173)
-cd frontend
-npm run dev
-```
-
-Open **http://localhost:5173** and sign in!
 
 ### Test Accounts
 
