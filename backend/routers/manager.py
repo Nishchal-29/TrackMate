@@ -25,7 +25,6 @@ from schemas.user import CurrentUser
 from services.audit import write_audit_log
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/manager", tags=["Manager"])
 
 @router.get(
@@ -38,8 +37,6 @@ async def get_team(
     db: Annotated[AsyncSession, Depends(get_db)],
     financial_year: str | None = None,
 ):
-    """Get all direct reports with their goal sheet status summary."""
-    # Admins see all employees; managers see only their direct reports
     if current_user.role == UserRole.admin:
         query = select(User).where(
             User.is_active == True,
@@ -62,7 +59,6 @@ async def get_team(
 
         sheet_result = await db.execute(sheet_query)
         sheet = sheet_result.scalar_one_or_none()
-
         goals_count = 0
         total_weightage = Decimal("0")
         avg_score = None
@@ -78,11 +74,9 @@ async def get_team(
             goals_count = row[0] or 0
             total_weightage = row[1] or Decimal("0")
             score_result = await db.execute(
-                select(func.avg(Achievement.score)).where(
-                    Achievement.goal_id.in_(
-                        select(Goal.id).where(Goal.sheet_id == sheet.id)
-                    )
-                )
+                select(func.sum((Achievement.score * Goal.weightage) / 100))
+                .join(Goal, Goal.id == Achievement.goal_id)
+                .where(Goal.sheet_id == sheet.id)
             )
             avg_score = score_result.scalar_one_or_none()
 
@@ -100,7 +94,6 @@ async def get_team(
 
     return team_status
 
-
 @router.get(
     "/team/{employee_id}/sheet",
     response_model=GoalSheetResponse,
@@ -112,7 +105,6 @@ async def get_employee_sheet(
     db: Annotated[AsyncSession, Depends(get_db)],
     financial_year: str | None = None,
 ):
-    """Get an employee's full goal sheet with goals and achievement summaries."""
     if current_user.role != UserRole.admin:
         emp_result = await db.execute(
             select(User).where(User.id == employee_id)
@@ -140,7 +132,6 @@ async def get_employee_sheet(
 
     return sheet
 
-
 @router.post(
     "/team/{employee_id}/goals/{goal_id}/checkin",
     response_model=CheckinResponse,
@@ -154,7 +145,6 @@ async def create_checkin(
     current_user: Annotated[CurrentUser, Depends(require_manager)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Log a structured check-in comment with optional rating for an employee's goal."""
     if current_user.role != UserRole.admin:
         emp_result = await db.execute(
             select(User).where(User.id == employee_id)

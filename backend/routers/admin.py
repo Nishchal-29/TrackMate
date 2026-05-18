@@ -26,7 +26,6 @@ from schemas.admin import (
 from services.audit import write_audit_log
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 @router.get(
@@ -58,7 +57,6 @@ async def list_users(
     result = await db.execute(query)
     return result.scalars().all()
 
-
 @router.post(
     "/users",
     response_model=UserResponse,
@@ -70,7 +68,6 @@ async def create_user(
     current_user: Annotated[CurrentUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Create a new user (admin only)."""
     existing = await db.execute(
         select(User).where(
             (User.email == body.email) | (User.azure_oid == body.azure_oid)
@@ -97,7 +94,6 @@ async def create_user(
 
     return user
 
-
 @router.patch(
     "/users/{user_id}",
     response_model=UserResponse,
@@ -109,7 +105,6 @@ async def update_user(
     current_user: Annotated[CurrentUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Update user details (admin only)."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if user is None:
@@ -142,7 +137,6 @@ async def list_cycles(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """List all quarterly cycle configurations."""
     result = await db.execute(
         select(QuarterlyCycle).order_by(
             QuarterlyCycle.financial_year.desc(),
@@ -150,7 +144,6 @@ async def list_cycles(
         )
     )
     return result.scalars().all()
-
 
 @router.post(
     "/quarterly-cycles",
@@ -163,7 +156,6 @@ async def create_cycle(
     current_user: Annotated[CurrentUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Create a new quarterly cycle configuration (admin only)."""
     cycle = QuarterlyCycle(
         financial_year=body.financial_year,
         quarter=body.quarter,
@@ -176,7 +168,6 @@ async def create_cycle(
     await db.flush()
     return cycle
 
-
 @router.patch(
     "/quarterly-cycles/{cycle_id}",
     response_model=QuarterlyCycleResponse,
@@ -188,7 +179,6 @@ async def update_cycle(
     current_user: Annotated[CurrentUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Update a quarterly cycle configuration (admin only)."""
     result = await db.execute(
         select(QuarterlyCycle).where(QuarterlyCycle.id == cycle_id)
     )
@@ -212,7 +202,6 @@ async def list_escalation_rules(
     current_user: Annotated[CurrentUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """List all escalation rules (admin only)."""
     result = await db.execute(select(EscalationRule))
     return result.scalars().all()
 
@@ -228,7 +217,6 @@ async def create_escalation_rule(
     current_user: Annotated[CurrentUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Create a new escalation rule (admin only)."""
     rule = EscalationRule(
         trigger_event=body.trigger_event,
         threshold_hours=body.threshold_hours,
@@ -252,10 +240,6 @@ async def get_dashboard(
     financial_year: str = "FY2025-26",
     quarter: str | None = None,
 ):
-    """
-    Get organization-wide completion statistics.
-    Uses a CTE for optimized querying.
-    """
     emp_count_result = await db.execute(
         select(func.count(User.id)).where(User.is_active == True)
     )
@@ -295,31 +279,30 @@ async def get_dashboard(
         Decimal(str(approved_count)) / Decimal(str(max(total_employees, 1))) * 100
     ).quantize(Decimal("0.01"))
 
-    avg_score_query = (
-        select(func.avg(Achievement.score))
-        .join(Goal, Goal.id == Achievement.goal_id)
-        .join(GoalSheet, GoalSheet.id == Goal.sheet_id)
-        .where(GoalSheet.financial_year == financial_year)
+    sheet_scores = (
+        select(
+            GoalSheet.id.label("sheet_id"),
+            GoalSheet.employee_id,
+            func.sum((Achievement.score * Goal.weightage) / 100).label("sheet_score")
+        )
+        .join(Goal, Goal.sheet_id == GoalSheet.id)
+        .join(Achievement, Achievement.goal_id == Goal.id)
+        .group_by(GoalSheet.id, GoalSheet.employee_id)
+        .subquery()
     )
-    if quarter:
-        avg_score_query = avg_score_query.where(Achievement.quarter == quarter)
 
+    avg_score_query = select(func.avg(sheet_scores.c.sheet_score))
     avg_score_result = await db.execute(avg_score_query)
     avg_org_score = avg_score_result.scalar_one_or_none()
 
     dept_query = (
         select(
             User.department,
-            func.avg(Achievement.score).label("avg_score"),
+            func.avg(sheet_scores.c.sheet_score).label("avg_score"),
             func.count(func.distinct(User.id)).label("employee_count"),
         )
-        .join(GoalSheet, GoalSheet.employee_id == User.id)
-        .join(Goal, Goal.sheet_id == GoalSheet.id)
-        .join(Achievement, Achievement.goal_id == Goal.id)
-        .where(
-            GoalSheet.financial_year == financial_year,
-            User.is_active == True,
-        )
+        .outerjoin(sheet_scores, sheet_scores.c.employee_id == User.id)
+        .where(User.is_active == True)
         .group_by(User.department)
         .order_by(User.department)
     )
@@ -382,10 +365,6 @@ async def get_audit_logs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
 ):
-    """
-    Get paginated audit logs with optional filters.
-    Admin only — no other roles have direct audit log access.
-    """
     query = select(AuditLog).order_by(AuditLog.timestamp.desc())
 
     if entity_type:

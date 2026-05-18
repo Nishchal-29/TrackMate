@@ -13,6 +13,7 @@ from database import get_db
 from middleware.auth import get_current_user, require_manager, require_admin
 from models.goal import Goal
 from models.goal_sheet import GoalSheet
+from models.achievement import Achievement
 from models.user import User
 from models.enums import GoalSheetStatus, UserRole
 from schemas.goal import GoalCreate, GoalUpdate, GoalResponse, PushGoalRequest, PushGoalResponse
@@ -91,11 +92,10 @@ async def get_my_sheets(
     db: Annotated[AsyncSession, Depends(get_db)],
     financial_year: str | None = None,
 ):
-    """Return the current user's goal sheets with goals ordered by order_index."""
     query = (
         select(GoalSheet)
         .where(GoalSheet.employee_id == current_user.id)
-        .options(selectinload(GoalSheet.goals))
+        .options(selectinload(GoalSheet.goals).selectinload(Goal.achievements))
         .order_by(GoalSheet.created_at.desc())
     )
     if financial_year:
@@ -104,7 +104,6 @@ async def get_my_sheets(
     result = await db.execute(query)
     sheets = result.scalars().unique().all()
     return sheets
-
 
 @router.get(
     "/{sheet_id}",
@@ -116,7 +115,6 @@ async def get_sheet(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Get a goal sheet by ID. Employees see only their own; managers/admins see team/all."""
     result = await db.execute(
         select(GoalSheet)
         .where(GoalSheet.id == sheet_id)
@@ -152,7 +150,6 @@ async def add_goal(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Add a new goal to a goal sheet."""
     result = await db.execute(
         select(GoalSheet).where(GoalSheet.id == sheet_id)
     )
@@ -209,7 +206,6 @@ async def update_goal(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Update an existing goal. Respects field locks and sheet lock status."""
     result = await db.execute(
         select(GoalSheet).where(GoalSheet.id == sheet_id)
     )
@@ -277,7 +273,6 @@ async def delete_goal(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Remove a goal from a draft sheet. Cannot delete shared/child goals."""
     result = await db.execute(
         select(GoalSheet).where(GoalSheet.id == sheet_id)
     )
@@ -322,10 +317,6 @@ async def submit_sheet(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """
-    Submit a draft goal sheet for manager approval.
-    Validates: goal count (1-8), weightage >= 10 each, total == 100.00.
-    """
     result = await db.execute(
         select(GoalSheet)
         .where(GoalSheet.id == sheet_id)
@@ -347,7 +338,6 @@ async def submit_sheet(
             },
         )
 
-    # Run all submission validations
     try:
         await validate_submission(db, sheet_id)
     except ValueError as e:
@@ -357,7 +347,6 @@ async def submit_sheet(
             detail={"detail": "Submission validation failed.", "code": "VALIDATION_FAILED", "errors": errors},
         )
 
-    # Update sheet status
     now = datetime.now(timezone.utc)
     sheet.status = GoalSheetStatus.pending_approval
     sheet.submitted_at = now
@@ -387,7 +376,6 @@ async def approve_sheet(
     current_user: Annotated[CurrentUser, Depends(require_manager)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Manager approves a pending goal sheet. Sets locked=True."""
     result = await db.execute(
         select(GoalSheet)
         .where(GoalSheet.id == sheet_id)
@@ -403,7 +391,6 @@ async def approve_sheet(
             detail={"detail": "Only pending sheets can be approved.", "code": "NOT_PENDING"},
         )
 
-    # Verify the current user is the employee's manager or admin
     if current_user.role != UserRole.admin:
         emp_result = await db.execute(
             select(User).where(User.id == sheet.employee_id)
@@ -430,7 +417,6 @@ async def approve_sheet(
 
     return sheet
 
-
 @router.post(
     "/{sheet_id}/reject",
     response_model=GoalSheetResponse,
@@ -442,7 +428,6 @@ async def reject_sheet(
     current_user: Annotated[CurrentUser, Depends(require_manager)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Manager rejects a pending goal sheet with a reason."""
     result = await db.execute(
         select(GoalSheet)
         .where(GoalSheet.id == sheet_id)
@@ -458,7 +443,6 @@ async def reject_sheet(
             detail={"detail": "Only pending sheets can be rejected.", "code": "NOT_PENDING"},
         )
 
-    # Verify manager relationship
     if current_user.role != UserRole.admin:
         emp_result = await db.execute(
             select(User).where(User.id == sheet.employee_id)
@@ -491,7 +475,6 @@ async def unlock_sheet(
     current_user: Annotated[CurrentUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Admin unlocks a locked goal sheet with a mandatory reason."""
     result = await db.execute(
         select(GoalSheet)
         .where(GoalSheet.id == sheet_id)
@@ -501,21 +484,20 @@ async def unlock_sheet(
     if sheet is None:
         raise HTTPException(status_code=404, detail="Goal sheet not found.")
 
-    if not sheet.locked:
+    if sheet.status not in (GoalSheetStatus.approved, GoalSheetStatus.rejected):
         raise HTTPException(
             status_code=422,
-            detail={"detail": "Sheet is not locked.", "code": "NOT_LOCKED"},
+            detail={"detail": "Only approved or rejected sheets can be unlocked back to draft.", "code": "CANNOT_UNLOCK"},
         )
 
-    # 1. Capture the old status before changing it for the audit log
-    old_status = sheet.status 
-
-    # 2. Update both the locked flag AND revert the status back to draft
+    old_status = sheet.status.value if hasattr(sheet.status, 'value') else str(sheet.status)
     sheet.locked = False
-    sheet.status = "draft" 
+    sheet.status = GoalSheetStatus.draft
+    sheet.approved_at = None
+    sheet.approved_by = None
+    sheet.submitted_at = None
     await db.flush()
 
-    # 3. Include both changes in the audit log delta
     await write_audit_log(
         db, "goal_sheet", sheet.id, "unlock",
         current_user.id, current_user.role.value,
@@ -530,7 +512,6 @@ async def unlock_sheet(
 
 push_router = APIRouter(prefix="/admin", tags=["Admin — Goals"])
 
-
 @push_router.post(
     "/push-goal",
     response_model=PushGoalResponse,
@@ -541,19 +522,15 @@ async def push_goal(
     current_user: Annotated[CurrentUser, Depends(require_manager)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """
-    Admin or manager pushes a shared KPI to multiple employees.
-    Creates a master goal and linked child goals in each employee's sheet.
-    """
     master_goal = Goal(
-        sheet_id=None,  # Will be set below if needed
+        sheet_id=None,  
         thrust_area=body.thrust_area,
         title=body.title,
         description=body.description,
         uom_type=body.uom_type,
         target_value=body.target_value,
         target_date=body.target_date,
-        weightage=Decimal("10.00"),  # Default — employees must assign
+        weightage=Decimal("10.00"),  
         order_index=0,
     )
 
