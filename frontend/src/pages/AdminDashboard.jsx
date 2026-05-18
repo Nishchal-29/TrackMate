@@ -1,5 +1,6 @@
 import { useDashboard } from '@/lib/queries'
 import { useAuth } from '@/lib/auth'
+import { useMsal } from "@azure/msal-react"
 import { Card, Skeleton } from '@/components/ui'
 import { Users, FileText, CheckCircle, TrendingUp, BarChart3 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts'
@@ -34,9 +35,11 @@ const CustomTooltip = ({ active, payload, label }) => {
 }
 
 export default function AdminDashboard() {
-  const { user } = useAuth()
+  const { user } = useAuth() // Fetches local auth
+  const { accounts } = useMsal() // Fetches Azure AD auth  
+  const msalRole = accounts[0]?.idTokenClaims?.roles?.[0]?.toLowerCase()
+  const isAdmin = msalRole === 'admin' || user?.role === 'admin'
   const { data: stats, isLoading } = useDashboard('FY2025-26')
-  const isAdmin = user?.role === 'admin'
 
   if (isLoading) {
     return (

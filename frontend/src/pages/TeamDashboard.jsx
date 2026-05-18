@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTeam, useApproveSheet, useRejectSheet, useUnlockSheet, useEmployeeSheet } from '@/lib/queries'
+import { useAuth } from '@/lib/auth'
 import { useMsal } from "@azure/msal-react" // Swapped from useAuth
 import { Card, Button, StatusBadge, EmptyState, Skeleton, Modal, Input } from '@/components/ui'
 import { Users, CheckCircle, XCircle, Eye, Lock, Unlock, UserCheck, Briefcase, Shield } from 'lucide-react'
@@ -174,10 +175,10 @@ export default function TeamDashboard() {
   const { data: team, isLoading } = useTeam()
   
   // Microsoft Entra ID Role Check
-  const { accounts } = useMsal()
-  const activeAccount = accounts[0]
-  const userRole = activeAccount?.idTokenClaims?.roles?.[0]?.toLowerCase() || 'employee'
-  const isAdmin = userRole === 'admin'
+  const { user } = useAuth() // Fetches local auth
+  const { accounts } = useMsal() // Fetches Azure AD auth  
+  const msalRole = accounts[0]?.idTokenClaims?.roles?.[0]?.toLowerCase()
+  const isAdmin = msalRole === 'admin' || user?.role === 'admin'
 
   const approveSheet = useApproveSheet()
   const rejectSheet = useRejectSheet()
