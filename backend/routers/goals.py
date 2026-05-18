@@ -77,7 +77,7 @@ async def create_goal_sheet(
     result = await db.execute(
         select(GoalSheet)
         .where(GoalSheet.id == sheet.id)
-        .options(selectinload(GoalSheet.goals))
+        .options(selectinload(GoalSheet.goals).selectinload(Goal.achievements))
     )
     return result.scalar_one()
 
@@ -118,7 +118,7 @@ async def get_sheet(
     result = await db.execute(
         select(GoalSheet)
         .where(GoalSheet.id == sheet_id)
-        .options(selectinload(GoalSheet.goals))
+        .options(selectinload(GoalSheet.goals).selectinload(Goal.achievements))
     )
     sheet = result.scalar_one_or_none()
 
@@ -191,14 +191,14 @@ async def add_goal(
         current_user.id, current_user.role.value,
     )
 
-    return goal
+    new_goal_result = await db.execute(
+        select(Goal)
+        .where(Goal.id == goal.id)
+        .options(selectinload(Goal.achievements))
+    )
+    return new_goal_result.scalar_one()
 
-
-@router.patch(
-    "/{sheet_id}/goals/{goal_id}",
-    response_model=GoalResponse,
-    summary="Update a goal",
-)
+@router.patch("/{sheet_id}/goals/{goal_id}", response_model=GoalResponse)
 async def update_goal(
     sheet_id: uuid.UUID,
     goal_id: uuid.UUID,
@@ -206,17 +206,19 @@ async def update_goal(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    result = await db.execute(
+    sheet_result = await db.execute(
         select(GoalSheet).where(GoalSheet.id == sheet_id)
     )
-    sheet = result.scalar_one_or_none()
+    sheet = sheet_result.scalar_one_or_none()
     if sheet is None:
         raise HTTPException(status_code=404, detail="Goal sheet not found.")
 
-    result = await db.execute(
-        select(Goal).where(Goal.id == goal_id, Goal.sheet_id == sheet_id)
+    goal_result = await db.execute(
+        select(Goal)
+        .where(Goal.id == goal_id, Goal.sheet_id == sheet_id)
+        .options(selectinload(Goal.achievements))
     )
-    goal = result.scalar_one_or_none()
+    goal = goal_result.scalar_one_or_none()  
     if goal is None:
         raise HTTPException(status_code=404, detail="Goal not found in this sheet.")
 
@@ -231,9 +233,9 @@ async def update_goal(
                 status_code=422,
                 detail={"detail": "A reason is required for editing locked sheets.", "code": "REASON_REQUIRED"},
             )
-
+            
     update_data = body.model_dump(exclude_unset=True)
-    update_data.pop("reason", None)  # Don't save reason to goal
+    update_data.pop("reason", None)  
 
     if goal.is_title_locked and "title" in update_data:
         raise HTTPException(
@@ -260,7 +262,6 @@ async def update_goal(
         )
 
     return goal
-
 
 @router.delete(
     "/{sheet_id}/goals/{goal_id}",
@@ -320,7 +321,7 @@ async def submit_sheet(
     result = await db.execute(
         select(GoalSheet)
         .where(GoalSheet.id == sheet_id)
-        .options(selectinload(GoalSheet.goals))
+        .options(selectinload(GoalSheet.goals).selectinload(Goal.achievements))
     )
     sheet = result.scalar_one_or_none()
     if sheet is None:
@@ -350,6 +351,7 @@ async def submit_sheet(
     now = datetime.now(timezone.utc)
     sheet.status = GoalSheetStatus.pending_approval
     sheet.submitted_at = now
+    sheet.review_notes = None
     await db.flush()
 
     await write_audit_log(
@@ -379,7 +381,7 @@ async def approve_sheet(
     result = await db.execute(
         select(GoalSheet)
         .where(GoalSheet.id == sheet_id)
-        .options(selectinload(GoalSheet.goals))
+        .options(selectinload(GoalSheet.goals).selectinload(Goal.achievements))
     )
     sheet = result.scalar_one_or_none()
     if sheet is None:
@@ -431,7 +433,7 @@ async def reject_sheet(
     result = await db.execute(
         select(GoalSheet)
         .where(GoalSheet.id == sheet_id)
-        .options(selectinload(GoalSheet.goals))
+        .options(selectinload(GoalSheet.goals).selectinload(Goal.achievements))
     )
     sheet = result.scalar_one_or_none()
     if sheet is None:
@@ -453,6 +455,7 @@ async def reject_sheet(
 
     sheet.status = GoalSheetStatus.rejected
     sheet.locked = False
+    sheet.review_notes = body.reason
     await db.flush()
 
     await write_audit_log(
@@ -478,7 +481,7 @@ async def unlock_sheet(
     result = await db.execute(
         select(GoalSheet)
         .where(GoalSheet.id == sheet_id)
-        .options(selectinload(GoalSheet.goals))
+        .options(selectinload(GoalSheet.goals).selectinload(Goal.achievements))
     )
     sheet = result.scalar_one_or_none()
     if sheet is None:
@@ -496,6 +499,7 @@ async def unlock_sheet(
     sheet.approved_at = None
     sheet.approved_by = None
     sheet.submitted_at = None
+    sheet.review_notes = body.reason
     await db.flush()
 
     await write_audit_log(

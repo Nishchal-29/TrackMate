@@ -3,8 +3,8 @@ import { PublicClientApplication } from "@azure/msal-browser";
 export const msalConfig = {
   auth: {
     clientId: import.meta.env.VITE_AZURE_CLIENT_ID,
-    authority: `https://login.microsoftonline.com/${import.meta.env.VITE_AZURE_TENANT_ID}`,
-    redirectUri: window.location.origin, // Dynamically uses http://localhost:5173 or your prod URL
+    authority: "https://login.microsoftonline.com/common",
+    redirectUri: window.location.origin,
   },
   cache: {
     cacheLocation: "sessionStorage",
@@ -15,5 +15,5 @@ export const msalConfig = {
 export const msalInstance = new PublicClientApplication(msalConfig);
 
 export const loginRequest = {
-  scopes: ["User.Read"] // You can add your custom API scopes here later if needed
+  scopes: ["api://1ea589ce-14e2-4c4c-8512-af8bf1503ef0/access_as_user"] 
 };

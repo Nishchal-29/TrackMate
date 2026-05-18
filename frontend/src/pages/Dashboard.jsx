@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
 import { useMySheets, useCreateSheet } from '@/lib/queries'
 import { Card, Button, StatusBadge, WeightageBar, EmptyState, Skeleton } from '@/components/ui'
-import { Target, Plus, ArrowRight, FileText } from 'lucide-react'
+import { Target, Plus, ArrowRight, FileText, AlertCircle } from 'lucide-react'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -30,7 +30,8 @@ export default function Dashboard() {
     )
   }
 
-  const activeSheet = sheets?.find(s => s.status !== 'rejected')
+  // Grab the most recent sheet (so rejected/unlocked sheets don't disappear!)
+  const activeSheet = sheets?.[0]
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -90,6 +91,22 @@ export default function Dashboard() {
       {/* Active sheet */}
       {activeSheet ? (
         <Card className="animate-slide-up">
+          
+          {/* --- MANAGER / ADMIN FEEDBACK BANNER --- */}
+          {activeSheet.review_notes && (activeSheet.status === 'rejected' || activeSheet.status === 'draft') && (
+            <div className="mb-6 p-4 rounded-lg bg-[var(--color-error-soft)] border border-[var(--color-error)] flex items-start gap-3 animate-fade-in">
+              <AlertCircle className="w-5 h-5 text-[var(--color-error)] shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-sm font-bold text-[var(--color-error)]">
+                  {activeSheet.status === 'rejected' ? 'Manager Feedback: Action Required' : 'Sheet Unlocked by Admin'}
+                </h3>
+                <p className="text-sm text-[var(--color-error)] opacity-90 mt-1 whitespace-pre-wrap">
+                  {activeSheet.review_notes}
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between mb-4">
             <div>
               <div className="flex items-center gap-3">
@@ -113,7 +130,7 @@ export default function Dashboard() {
 
           {/* Goal list preview */}
           <div className="space-y-2">
-            {activeSheet.goals.slice(0, 4).map((goal, i) => (
+            {activeSheet.goals.slice(0, 8).map((goal, i) => (
               <div key={goal.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-[var(--color-bg-primary)]">
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="text-xs font-mono text-[var(--color-text-muted)] w-5">{i + 1}</span>
@@ -125,9 +142,9 @@ export default function Dashboard() {
                 <span className="text-xs font-mono text-[var(--color-accent)] shrink-0">{Number(goal.weightage).toFixed(0)}%</span>
               </div>
             ))}
-            {activeSheet.goals.length > 4 && (
+            {activeSheet.goals.length > 8 && (
               <p className="text-xs text-center text-[var(--color-text-muted)] pt-1">
-                +{activeSheet.goals.length - 4} more goals
+                +{activeSheet.goals.length - 8} more goals
               </p>
             )}
           </div>

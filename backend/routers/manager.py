@@ -118,7 +118,7 @@ async def get_employee_sheet(
     query = (
         select(GoalSheet)
         .where(GoalSheet.employee_id == employee_id)
-        .options(selectinload(GoalSheet.goals))
+        .options(selectinload(GoalSheet.goals).selectinload(Goal.achievements))
     )
     if financial_year:
         query = query.where(GoalSheet.financial_year == financial_year)

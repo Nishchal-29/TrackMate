@@ -20,9 +20,7 @@ logger = logging.getLogger(__name__)
 AZURE_TENANT_ID = os.getenv("AZURE_TENANT_ID", "")
 AZURE_CLIENT_ID = os.getenv("AZURE_CLIENT_ID", "")
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-
-JWKS_URI = f"https://login.microsoftonline.com/{AZURE_TENANT_ID}/discovery/v2.0/keys"
-ISSUER = f"https://login.microsoftonline.com/{AZURE_TENANT_ID}/v2.0"
+JWKS_URI = "https://login.microsoftonline.com/common/discovery/v2.0/keys"
 
 _jwks_cache: dict | None = None
 
@@ -76,7 +74,7 @@ async def _validate_token(token: str) -> dict:
             rsa_key,
             algorithms=["RS256"],
             audience=AZURE_CLIENT_ID,
-            issuer=ISSUER,
+            options={"verify_iss": False},
         )
         return payload
 
@@ -91,7 +89,6 @@ async def _validate_token(token: str) -> dict:
             detail=f"Invalid token: {str(e)}",
         )
 
-
 async def _upsert_user(
     db: AsyncSession,
     azure_oid: str,
@@ -99,7 +96,6 @@ async def _upsert_user(
     full_name: str,
     role: UserRole = UserRole.employee,
 ) -> User:
-    """Look up or auto-provision a user based on Azure OID."""
     result = await db.execute(
         select(User).where(User.azure_oid == azure_oid)
     )
@@ -118,17 +114,10 @@ async def _upsert_user(
 
     return user
 
-
 async def get_current_user(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CurrentUser:
-    """
-    FastAPI dependency that extracts and validates the current user.
-
-    In development mode without Azure AD configured, allows a dev header
-    X-Dev-User-Email to simulate authentication.
-    """
     auth_header = request.headers.get("Authorization", "")
     _azure_configured = AZURE_TENANT_ID and not AZURE_TENANT_ID.startswith("your-")
     if ENVIRONMENT == "development" and (not _azure_configured or not auth_header):
@@ -220,7 +209,6 @@ async def get_current_user(
     )
     request.state.user = current_user
     return current_user
-
 
 def require_role(*roles: UserRole):
     async def _check_role(
