@@ -25,6 +25,7 @@ class UomType(str, enum.Enum):
 
 class Quarter(str, enum.Enum):
     """Financial year quarters."""
+    PHASE_1 = "Phase 1"
     Q1 = "Q1"
     Q2 = "Q2"
     Q3 = "Q3"

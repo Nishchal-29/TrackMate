@@ -105,6 +105,7 @@ export const adminApi = {
   updateCycle: (id, data) =>
     api.patch(`/admin/quarterly-cycles/${id}`, data),
   pushGoal: (data) => api.post('/admin/push-goal', data),
+  deleteCycle: (id) => api.delete(`/admin/quarterly-cycles/${id}`),
 }
 
 export default api

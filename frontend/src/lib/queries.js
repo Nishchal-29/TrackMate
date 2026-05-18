@@ -187,3 +187,19 @@ export function useCreateCycle() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['cycles'] }),
   })
 }
+
+export const useUpdateCycle = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, data }) => adminApi.updateCycle(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['cycles'] }),
+  })
+}
+
+export const useDeleteCycle = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id) => adminApi.deleteCycle(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['cycles'] }),
+  })
+}

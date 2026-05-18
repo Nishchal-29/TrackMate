@@ -193,6 +193,29 @@ async def update_cycle(
 
     return cycle
 
+@router.delete(
+    "/quarterly-cycles/{cycle_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Delete a quarterly cycle",
+)
+async def delete_cycle(
+    cycle_id: uuid.UUID,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(
+        select(QuarterlyCycle).where(QuarterlyCycle.id == cycle_id)
+    )
+    cycle = result.scalar_one_or_none()
+    
+    if cycle is None:
+        raise HTTPException(status_code=404, detail="Quarterly cycle not found.")
+
+    await db.delete(cycle)
+    await db.flush()
+
+    return {"detail": "Quarterly cycle deleted successfully."}
+
 @router.get(
     "/escalation-rules",
     response_model=list[EscalationRuleResponse],
