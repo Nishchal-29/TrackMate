@@ -28,10 +28,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage application startup and shutdown lifecycle."""
     logger.info("Starting Goal Portal API...")
     try:
         async with async_engine.begin() as conn:
@@ -46,19 +44,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Goal Portal API...")
     await async_engine.dispose()
 
-
-app = FastAPI(
-    title="Goal Setting & Tracking Portal API",
-    description=(
-        "Enterprise goal management system with RBAC, quarterly achievement tracking, "
-        "scoring engine, and comprehensive audit logging. "
-        "Built with FastAPI + PostgreSQL (Supabase) + Azure AD authentication."
-    ),
-    version="1.0.0",
-    lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
-)
+app = FastAPI()
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 app.add_middleware(
@@ -88,7 +74,6 @@ app.include_router(export_router, prefix=API_PREFIX)
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    """Health check endpoint for deployment monitoring."""
     try:
         async with async_engine.begin() as conn:
             await conn.execute(text("SELECT 1"))
@@ -98,7 +83,6 @@ async def health_check():
 
 @app.get("/", tags=["Health"])
 async def root():
-    """Root endpoint with API info."""
     return {
         "name": "Goal Setting & Tracking Portal API",
         "version": "1.0.0",

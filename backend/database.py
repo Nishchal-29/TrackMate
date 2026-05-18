@@ -14,13 +14,7 @@ from sqlalchemy.orm import DeclarativeBase
 from dotenv import load_dotenv
 
 load_dotenv()
-
 DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError(
-        "DATABASE_URL environment variable is not set. "
-        "Please create a .env file based on .env.example."
-    )
 
 def custom_json_serializer(obj):
     if isinstance(obj, Decimal):

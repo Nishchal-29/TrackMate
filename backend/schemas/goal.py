@@ -3,6 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, field_validator
 from models.enums import UomType
+from schemas.achievement import AchievementResponse
 
 class GoalCreate(BaseModel):
     """Schema for adding a goal to a sheet."""
@@ -70,7 +71,7 @@ class GoalResponse(BaseModel):
     is_target_locked: bool
     created_at: datetime
     updated_at: datetime
-
+    achievements: list[AchievementResponse] = []
 
 class PushGoalRequest(BaseModel):
     """Schema for admin/manager pushing a shared KPI to employees."""
