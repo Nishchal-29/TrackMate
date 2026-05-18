@@ -79,6 +79,7 @@ class GoalSheet(Base):
         cascade="all, delete-orphan",
         order_by="Goal.order_index",
     )
+    review_notes: Mapped[str | None] = mapped_column(String, nullable=True)
 
     def __repr__(self) -> str:
         return f"<GoalSheet {self.financial_year} status={self.status.value}>"

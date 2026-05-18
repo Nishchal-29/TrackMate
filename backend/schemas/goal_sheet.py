@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 from models.enums import GoalSheetStatus
+from typing import Optional
 
 class GoalSheetCreate(BaseModel):
     """Schema for creating a new draft goal sheet."""
@@ -22,6 +23,7 @@ class GoalSheetResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     goals: list["GoalResponse"] = []
+    review_notes: Optional[str] = None
 
 class GoalSheetWithEmployee(GoalSheetResponse):
     """Goal sheet response with employee info (for manager/admin views)."""
