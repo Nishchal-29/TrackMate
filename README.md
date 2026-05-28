@@ -25,7 +25,7 @@ Organizations face critical challenges in goal management:
 
 ---
 
-## Our Solution
+## The Solution
 
 **TrackMate** is a purpose-built goal management platform that solves every pain point with a structured, audited, role-based workflow:
 
@@ -36,8 +36,8 @@ Organizations face critical challenges in goal management:
 └──────────┘     └──────────────┘     └──────────────┘     └──────────┘
                                              │                    │
                                       ┌──────▼──────┐     ┌──────▼──────┐
-                                      │   Manager   │    │  Quarterly  │
-                                      │   Reviews   │    │ Achievement │
+                                      │   Manager   │     │  Quarterly  │
+                                      │   Reviews   │     │ Achievement │
                                       └─────────────┘     │  Tracking   │
                                                           └─────────────┘
 ```
@@ -88,9 +88,11 @@ Organizations face critical challenges in goal management:
 ### Key Architectural Decisions
 
 - **Async-first**: All database I/O is non-blocking (asyncpg + SQLAlchemy async)
+- **Non-blocking notifications**: Webhook dispatches use FastAPI `BackgroundTasks` — API responds instantly
 - **Decimal arithmetic**: Financial-grade precision — never uses `float` for scores/weightages
 - **Dual auth**: Supports both Microsoft SSO and local email/password fallback
 - **Audit by default**: Every mutating request is automatically logged via middleware
+- **Recursive CTEs**: Goal hierarchy lineage is resolved via PostgreSQL recursive queries for O(depth) performance
 - **Role-derived navigation**: UI dynamically adapts based on Azure AD App Roles or local role assignment
 
 ---
@@ -142,12 +144,14 @@ Organizations face critical challenges in goal management:
 - **Submit Workflow** — One-click submission with pre-flight validation
 - **Achievement Tracking** — Record quarterly actuals with automatic score computation
 - **Field-Level Locks** — Admin-pushed KPIs have locked titles and targets
+- **Goal Alignment View** — See how any cascaded goal rolls up through the hierarchy (employee → manager → org)
 
 ### Manager Dashboard
 - **Team Overview** — See all direct reports with goal status at a glance
 - **Approve/Reject** — One-click approval or rejection with reason
 - **Check-in System** — Structured quarterly check-ins with optional rating (1-5)
 - **Sheet Detail** — Deep-dive into any team member's goal sheet
+- **Cascade Goals** — Push any of your own goals down to direct reports as linked child goals
 
 ### Admin Console
 - **Org-Wide KPIs** — Total employees, submitted sheets, approval rate, average score
@@ -158,6 +162,19 @@ Organizations face critical challenges in goal management:
 - **Escalation Rules** — Set SLA thresholds for automated escalation
 - **Audit Logs** — Paginated, filterable log viewer with expandable JSON deltas
 - **Push Goals (KPIs)** — Cascade shared goals to multiple employees simultaneously
+
+### Cascading OKRs / Goal Hierarchy
+- **Parent-Child Goal Links** — Goals pushed by admins or cascaded by managers maintain a `parent_goal_id` link back to the source goal
+- **Recursive Lineage API** — PostgreSQL Recursive CTE walks up the `parent_goal_id` chain to build the full ancestry path from organizational objective → manager key result → employee target
+- **Visual Lineage Tracker** — Inline breadcrumb-style UI in the Goal Editor shows the full alignment chain with contextual icons (🏢 Org → 👥 Manager → 🎯 Employee) and gradient-highlighted current goal
+- **Alignment Badges** — Goals that are part of a hierarchy display an "Aligned" badge on the Dashboard and an "Alignment" toggle in the Goal Editor
+- **Manager Cascade Flow** — Managers can cascade any of their own goals to selected direct reports via a modal with employee picker, creating linked child goals automatically
+
+### Event-Driven Notifications
+- **Async Webhook Dispatcher** — Critical goal sheet lifecycle events (approval, rejection, unlock) trigger Slack/Discord webhook notifications via `httpx.AsyncClient`
+- **Non-Blocking Execution** — Notifications are dispatched via FastAPI `BackgroundTasks`, so the API response is never delayed by third-party network calls
+- **Graceful Degradation** — If no `SLACK_WEBHOOK_URL` is configured, the system logs a warning and continues without error — safe for local development
+- **Robust Error Handling** — All network/transport errors are caught and logged; a failing webhook never crashes the worker or propagates to the caller
 
 ### Data Export
 - **CSExport** — Flat-file export of achievement data with role-based filtering
@@ -212,7 +229,8 @@ TrackMate/
 │   ├── services/                        # Business logic layer
 │   │   ├── scoring.py                   # Score computation engine (4 UoM types)
 │   │   ├── goal_validation.py           # Weightage + count validation
-│   │   └── audit.py                     # Audit log writer + delta computation
+│   │   ├── audit.py                     # Audit log writer + delta computation
+│   │   └── notifications.py             # Async webhook dispatcher (Slack/Discord)
 │   │
 │   ├── middleware/                       # Request pipeline
 │   │   ├── auth.py                      # JWT validation (Azure AD + Local)
@@ -242,7 +260,10 @@ TrackMate/
         │
         ├── components/                   # Shared components
         │   ├── AppLayout.jsx             # Sidebar + header + auth controls
-        │   └── ui.jsx                    # Button, Card, Modal, StatusBadge, etc.
+        │   ├── ui.jsx                    # Button, Card, Modal, StatusBadge, etc.
+        │   ├── GoalLineageTracker.jsx    # Cascading OKR hierarchy visualizer
+        │   ├── CascadeGoalModal.jsx      # Manager goal cascade modal
+        │   └── PushGoalModal.jsx         # Admin push shared KPI modal
         │
         └── pages/                        # Route pages
             ├── LoginPage.jsx             # Dual auth login (SSO + email/password)
@@ -295,6 +316,7 @@ All endpoints are prefixed with `/api/v1`. Interactive docs available at `/docs`
 | `POST` | `/goal-sheets/{id}/goals` | Add goal to sheet |
 | `PATCH` | `/goal-sheets/{id}/goals/{gid}` | Update goal |
 | `DELETE` | `/goal-sheets/{id}/goals/{gid}` | Delete goal |
+| `GET` | `/goal-sheets/{id}/goals/{gid}/lineage` | Get cascading OKR lineage (root → leaf) |
 
 ### Achievements
 | Method | Endpoint | Description |
@@ -308,6 +330,7 @@ All endpoints are prefixed with `/api/v1`. Interactive docs available at `/docs`
 | `GET` | `/manager/team` | Team overview |
 | `GET` | `/manager/team/{eid}/sheet` | Employee's sheet |
 | `POST` | `/manager/team/{eid}/goals/{gid}/checkin` | Log check-in |
+| `POST` | `/manager/goals/{gid}/cascade` | Cascade goal to direct reports |
 
 ### Admin
 | Method | Endpoint | Description |
@@ -357,9 +380,11 @@ TrackMate supports **two authentication methods** that can coexist:
 | Create/edit own goals | ✅ | ✅ | ✅ |
 | Submit goal sheet | ✅ | ✅ | ✅ |
 | View own achievements | ✅ | ✅ | ✅ |
+| View goal alignment/lineage | ✅ | ✅ | ✅ |
 | View team goals | ❌ | ✅ | ✅ |
 | Approve/reject sheets | ❌ | ✅ | ✅ |
 | Log check-ins | ❌ | ✅ | ✅ |
+| Cascade goals to team | ❌ | ✅ | ✅ |
 | Manage users | ❌ | ❌ | ✅ |
 | Configure quarterly cycles | ❌ | ❌ | ✅ |
 | Push shared KPIs | ❌ | ❌ | ✅ |
@@ -391,8 +416,20 @@ draft ──submit──▶ pending_approval ──approve──▶ approved (lo
                         │                           │
                         └──reject──▶ rejected   unlock (admin)
                                                     │
-                                                    ▼
-                                              approved (unlocked)
+                                                     ▼
+                                               approved (unlocked)
 ```
+
+### Notification Events
+
+| Event | Webhook Message | Trigger |
+|---|---|---|
+| Sheet Approved | *Goal Sheet Approved*: `{actor}` approved the `{FY}` goal sheet. | `POST /{id}/approve` |
+| Sheet Rejected | *Goal Sheet Rejected*: `{actor}` rejected the `{FY}` goal sheet. Reason: `{reason}` | `POST /{id}/reject` |
+| Sheet Unlocked | *Goal Sheet Unlocked*: `{actor}` unlocked the `{FY}` goal sheet. Reason: `{reason}` | `POST /{id}/unlock` |
+
+> **Configuration**: Set `SLACK_WEBHOOK_URL` in `.env` to enable. Notifications are dispatched via FastAPI `BackgroundTasks` so the API responds instantly without waiting for the webhook call. Leave empty to silently disable notifications in local development.
+
+---
 
 Deployed Link -> https://trackmate-frontend-e26o.onrender.com/
