@@ -67,6 +67,8 @@ export const goalApi = {
     api.patch(`/goal-sheets/${sheetId}/goals/${goalId}`, data),
   deleteGoal: (sheetId, goalId) =>
     api.delete(`/goal-sheets/${sheetId}/goals/${goalId}`),
+  getGoalLineage: (sheetId, goalId) =>
+    api.get(`/goal-sheets/${sheetId}/goals/${goalId}/lineage`),
 }
 
 export const achievementApi = {
@@ -83,6 +85,7 @@ export const managerApi = {
     }),
   addCheckin: (empId, goalId, data) =>
     api.post(`/manager/team/${empId}/goals/${goalId}/checkin`, data),
+  cascadeGoal: (goalId, data) => api.post(`/manager/goals/${goalId}/cascade`, data),
 }
 
 export const adminApi = {

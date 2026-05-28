@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useSheet, useAddGoal, useUpdateGoal, useDeleteGoal, useSubmitSheet } from '@/lib/queries'
+import { useAuth } from '@/lib/auth'
 import { Card, Button, Input, Select, StatusBadge, WeightageBar, Modal, EmptyState, Skeleton } from '@/components/ui'
-import { Plus, Trash2, Edit3, Send, Lock, ArrowLeft, GripVertical, CheckCircle, Info } from 'lucide-react'
+import GoalLineageTracker from '@/components/GoalLineageTracker'
+import CascadeGoalModal from '@/components/CascadeGoalModal'
+import { Plus, Trash2, Edit3, Send, Lock, ArrowLeft, GripVertical, CheckCircle, Info, GitBranch, GitMerge } from 'lucide-react'
 
 const UOM_OPTIONS = [
   { value: 'numeric', label: 'Numeric (e.g. revenue, units)' },
@@ -43,6 +46,8 @@ function GoalForm({ onSubmit, onCancel, initial }) {
 export default function GoalEditor() {
   const { sheetId } = useParams()
   const navigate = useNavigate()
+  const { user } = useAuth()
+  
   const { data: sheet, isLoading } = useSheet(sheetId)
   const addGoal = useAddGoal()
   const updateGoal = useUpdateGoal()
@@ -52,8 +57,11 @@ export default function GoalEditor() {
   const [showForm, setShowForm] = useState(false)
   const [editGoal, setEditGoal] = useState(null)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
+  const [expandedLineageId, setExpandedLineageId] = useState(null)
+  const [cascadeTargetGoal, setCascadeTargetGoal] = useState(null)
 
   const isDraft = sheet?.status === 'draft'
+  const canCascade = user?.role === 'manager' || user?.role === 'admin'
   const totalWeightage = sheet?.goals?.reduce((s, g) => s + Number(g.weightage), 0) || 0
   const canSubmit = isDraft && sheet?.goals?.length >= 1 && Math.abs(totalWeightage - 100) < 0.01
 
@@ -72,7 +80,6 @@ export default function GoalEditor() {
       setShowForm(false)
     } catch (err) {
       const detail = err.response?.data?.detail;
-      // If it's an array (FastAPI validation error), map through and extract the messages
       if (Array.isArray(detail)) {
         alert(detail.map(e => e.msg).join('\n'));
       } else {
@@ -211,59 +218,102 @@ export default function GoalEditor() {
           {sheet.goals
             .sort((a, b) => a.order_index - b.order_index)
             .map((goal, i) => (
-              <Card key={goal.id} className="group hover:border-[var(--color-accent)]/30 transition-all animate-slide-up" style={{ animationDelay: `${i * 50}ms` }}>
-                {editGoal?.id === goal.id ? (
-                  <GoalForm
-                    initial={{ thrust_area: goal.thrust_area, title: goal.title, description: goal.description || '', uom_type: goal.uom_type, target_value: goal.target_value || '', weightage: goal.weightage }}
-                    onSubmit={handleUpdateGoal}
-                    onCancel={() => setEditGoal(null)}
-                  />
-                ) : (
-                  <div className="flex items-start gap-3">
-                    <div className="flex items-center gap-2 pt-0.5">
-                      <GripVertical className="w-4 h-4 text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" />
-                      <span className="w-6 h-6 rounded-full bg-[var(--color-accent-soft)] flex items-center justify-center text-[10px] font-bold text-[var(--color-accent)]">
-                        {i + 1}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold truncate">{goal.title}</h3>
-                        {goal.is_title_locked && <Lock className="w-3 h-3 text-[var(--color-warning)]" />}
+              <div key={goal.id} className="space-y-0">
+                <Card className="group hover:border-[var(--color-accent)]/30 transition-all animate-slide-up" style={{ animationDelay: `${i * 50}ms` }}>
+                  {editGoal?.id === goal.id ? (
+                    <GoalForm
+                      initial={{ thrust_area: goal.thrust_area, title: goal.title, description: goal.description || '', uom_type: goal.uom_type, target_value: goal.target_value || '', weightage: goal.weightage }}
+                      onSubmit={handleUpdateGoal}
+                      onCancel={() => setEditGoal(null)}
+                    />
+                  ) : (
+                    <div className="flex items-start gap-3">
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <GripVertical className="w-4 h-4 text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <span className="w-6 h-6 rounded-full bg-[var(--color-accent-soft)] flex items-center justify-center text-[10px] font-bold text-[var(--color-accent)]">
+                          {i + 1}
+                        </span>
                       </div>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-[var(--color-text-secondary)]">
-                        <span className="px-1.5 py-0.5 rounded bg-[var(--color-bg-primary)]">{goal.thrust_area}</span>
-                        <span>{goal.uom_type}</span>
-                        {goal.target_value && <span>Target: {Number(goal.target_value).toLocaleString()}</span>}
-                      </div>
-                      {goal.description && <p className="text-xs text-[var(--color-text-muted)] mt-1.5 line-clamp-2">{goal.description}</p>}
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <div className="text-right">
-                        <p className="text-lg font-bold gradient-text">{Number(goal.weightage).toFixed(0)}%</p>
-                        <p className="text-[10px] text-[var(--color-text-muted)]">weightage</p>
-                      </div>
-                      {isDraft && (
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => setEditGoal(goal)} className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] transition-colors">
-                            <Edit3 className="w-3.5 h-3.5 text-[var(--color-text-secondary)]" />
-                          </button>
-                          {!goal.parent_goal_id && (
-                            <button onClick={() => handleDelete(goal.id)} className="p-1.5 rounded hover:bg-[var(--color-danger-soft)] transition-colors">
-                              <Trash2 className="w-3.5 h-3.5 text-[var(--color-danger)]" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-semibold truncate">{goal.title}</h3>
+                          {goal.is_title_locked && <Lock className="w-3 h-3 text-[var(--color-warning)]" />}
+                          {goal.parent_goal_id && (
+                            <button
+                              id={`lineage-toggle-${goal.id}`}
+                              onClick={() => setExpandedLineageId(expandedLineageId === goal.id ? null : goal.id)}
+                              className={`
+                                inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium
+                                transition-all duration-200 cursor-pointer
+                                ${expandedLineageId === goal.id
+                                  ? 'bg-[var(--color-accent)] text-white shadow-md shadow-[var(--color-accent)]/25'
+                                  : 'bg-[var(--color-info-soft)] text-[var(--color-info)] hover:bg-[var(--color-info)]/20'
+                                }
+                              `}
+                              title="View goal alignment hierarchy"
+                            >
+                              <GitBranch className="w-3 h-3" />
+                              <span>{expandedLineageId === goal.id ? 'Hide' : 'Alignment'}</span>
                             </button>
                           )}
                         </div>
-                      )}
+                        <div className="flex items-center gap-3 mt-1 text-xs text-[var(--color-text-secondary)]">
+                          <span className="px-1.5 py-0.5 rounded bg-[var(--color-bg-primary)]">{goal.thrust_area}</span>
+                          <span>{goal.uom_type}</span>
+                          {goal.target_value && <span>Target: {Number(goal.target_value).toLocaleString()}</span>}
+                        </div>
+                        {goal.description && <p className="text-xs text-[var(--color-text-muted)] mt-1.5 line-clamp-2">{goal.description}</p>}
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="text-right">
+                          <p className="text-lg font-bold gradient-text">{Number(goal.weightage).toFixed(0)}%</p>
+                          <p className="text-[10px] text-[var(--color-text-muted)]">weightage</p>
+                        </div>
+                        
+                        {/* Hover Action Buttons */}
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {/* Cascade Button for Managers/Admins */}
+                          {canCascade && (
+                            <button 
+                              onClick={() => setCascadeTargetGoal(goal)} 
+                              className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] transition-colors"
+                              title="Cascade Goal to Team"
+                            >
+                              <GitMerge className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                            </button>
+                          )}
+                          
+                          {/* Edit/Delete Buttons for Draft Sheets */}
+                          {isDraft && (
+                            <>
+                              <button onClick={() => setEditGoal(goal)} className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] transition-colors" title="Edit Goal">
+                                <Edit3 className="w-3.5 h-3.5 text-[var(--color-text-secondary)]" />
+                              </button>
+                              {!goal.parent_goal_id && (
+                                <button onClick={() => handleDelete(goal.id)} className="p-1.5 rounded hover:bg-[var(--color-danger-soft)] transition-colors" title="Delete Goal">
+                                  <Trash2 className="w-3.5 h-3.5 text-[var(--color-danger)]" />
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </Card>
+                  )}
+
+                  {/* Lineage tracker — expands inline below the goal content */}
+                  {expandedLineageId === goal.id && goal.parent_goal_id && (
+                    <div className="mt-3 pt-3 border-t border-[var(--color-border)] border-dashed">
+                      <GoalLineageTracker sheetId={sheetId} goalId={goal.id} />
+                    </div>
+                  )}
+                </Card>
+              </div>
             ))}
         </div>
       )}
 
-      {/* Submit confirmation */}
+      {/* Submit confirmation Modal */}
       <Modal open={showSubmitConfirm} onClose={() => setShowSubmitConfirm(false)} title="Submit Goal Sheet?">
         <div className="space-y-4">
           <div className="p-3 rounded-lg bg-[var(--color-bg-primary)]">
@@ -288,6 +338,13 @@ export default function GoalEditor() {
           </div>
         </div>
       </Modal>
+
+      {/* Cascade Goal Modal */}
+      <CascadeGoalModal 
+        isOpen={!!cascadeTargetGoal} 
+        onClose={() => setCascadeTargetGoal(null)}
+        goal={cascadeTargetGoal}
+      />
     </div>
   )
 }

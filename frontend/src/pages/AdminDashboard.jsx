@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { useDashboard } from '@/lib/queries'
 import { useAuth } from '@/lib/auth'
 import { useMsal } from "@azure/msal-react"
-import { Card, Skeleton } from '@/components/ui'
-import { Users, FileText, CheckCircle, TrendingUp, BarChart3 } from 'lucide-react'
+import { Card, Skeleton, Button } from '@/components/ui'
+import { Users, FileText, CheckCircle, TrendingUp, BarChart3, Send } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts'
+import PushGoalModal from '@/components/PushGoalModal'
 
 function StatCard({ icon: Icon, label, value, color, suffix }) {
   return (
@@ -40,6 +42,9 @@ export default function AdminDashboard() {
   const msalRole = accounts[0]?.idTokenClaims?.roles?.[0]?.toLowerCase()
   const isAdmin = msalRole === 'admin' || user?.role === 'admin'
   const { data: stats, isLoading } = useDashboard('FY2025-26')
+  
+  // State for the Push Goal Modal
+  const [isPushModalOpen, setIsPushModalOpen] = useState(false)
 
   if (isLoading) {
     return (
@@ -76,10 +81,18 @@ export default function AdminDashboard() {
   })) || []
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-        <p className="text-sm text-[var(--color-text-secondary)] mt-1">Organization-wide performance overview — FY2025-26</p>
+    <div className="space-y-6 animate-fade-in relative">
+      {/* Header section with the new Button */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+          <p className="text-sm text-[var(--color-text-secondary)] mt-1">Organization-wide performance overview — FY2025-26</p>
+        </div>
+        
+        <Button onClick={() => setIsPushModalOpen(true)}>
+          <Send className="w-4 h-4 mr-2" />
+          Push Shared KPI
+        </Button>
       </div>
 
       {/* KPI Cards */}
@@ -138,6 +151,12 @@ export default function AdminDashboard() {
           )}
         </Card>
       </div>
+
+      {/* Render the Push Goal Modal */}
+      <PushGoalModal 
+        isOpen={isPushModalOpen} 
+        onClose={() => setIsPushModalOpen(false)} 
+      />
     </div>
   )
 }

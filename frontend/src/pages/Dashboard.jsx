@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
 import { useMySheets, useCreateSheet } from '@/lib/queries'
 import { Card, Button, StatusBadge, WeightageBar, EmptyState, Skeleton } from '@/components/ui'
-import { Target, Plus, ArrowRight, FileText, AlertCircle } from 'lucide-react'
+import { Target, Plus, ArrowRight, FileText, AlertCircle, GitBranch } from 'lucide-react'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -135,7 +135,15 @@ export default function Dashboard() {
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="text-xs font-mono text-[var(--color-text-muted)] w-5">{i + 1}</span>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{goal.title}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium truncate">{goal.title}</p>
+                      {goal.parent_goal_id && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[var(--color-info-soft)] text-[var(--color-info)] text-[9px] font-medium shrink-0" title="Part of a cascading OKR hierarchy">
+                          <GitBranch className="w-2.5 h-2.5" />
+                          Aligned
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[10px] text-[var(--color-text-muted)]">{goal.thrust_area}</p>
                   </div>
                 </div>

@@ -99,6 +99,14 @@ export function useDeleteGoal() {
   })
 }
 
+export function useGoalLineage(sheetId, goalId) {
+  return useQuery({
+    queryKey: ['goal-lineage', sheetId, goalId],
+    queryFn: () => goalApi.getGoalLineage(sheetId, goalId).then(r => r.data),
+    enabled: !!sheetId && !!goalId,
+  })
+}
+
 // ── Achievements ─────────────────────────────────────────────
 export function useAchievements(goalId) {
   return useQuery({
@@ -143,6 +151,15 @@ export function useAddCheckin() {
   })
 }
 
+export const useCascadeGoal = () => {
+  return useMutation({
+    mutationFn: async ({ goalId, data }) => {
+      const res = await managerApi.cascadeGoal(goalId, data)
+      return res.data
+    }
+  })
+}
+
 // ── Admin ────────────────────────────────────────────────────
 export function useDashboard(fy) {
   return useQuery({
@@ -151,10 +168,13 @@ export function useDashboard(fy) {
   })
 }
 
-export function useUsers() {
+export const useUsers = () => {
   return useQuery({
     queryKey: ['users'],
-    queryFn: () => adminApi.getUsers().then(r => r.data),
+    queryFn: async () => {
+      const res = await adminApi.getUsers()
+      return res.data
+    }
   })
 }
 
@@ -201,5 +221,19 @@ export const useDeleteCycle = () => {
   return useMutation({
     mutationFn: (id) => adminApi.deleteCycle(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['cycles'] }),
+  })
+}
+
+export const usePushGoal = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (data) => {
+      const res = await adminApi.pushGoal(data)
+      return res.data
+    },
+    onSuccess: () => {
+      // Refresh admin stats if needed
+      queryClient.invalidateQueries({ queryKey: ['adminDashboard'] })
+    }
   })
 }
