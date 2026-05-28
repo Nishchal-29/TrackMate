@@ -26,6 +26,7 @@ from services.goal_validation import (
     validate_sheet_is_draft, validate_goal_count, validate_submission,
 )
 from services.audit import write_audit_log, compute_delta
+from services.notifications import send_webhook_notification
 
 logger = logging.getLogger(__name__)
 
@@ -390,6 +391,7 @@ async def approve_sheet(
     sheet_id: uuid.UUID,
     current_user: Annotated[CurrentUser, Depends(require_manager)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    background_tasks: BackgroundTasks,
 ):
     result = await db.execute(
         select(GoalSheet)
@@ -430,6 +432,11 @@ async def approve_sheet(
         delta={"status": {"old": "pending_approval", "new": "approved"}, "locked": {"old": False, "new": True}},
     )
 
+    background_tasks.add_task(
+        send_webhook_notification,
+        f"\u2705 *Goal Sheet Approved*: {current_user.full_name} approved the {sheet.financial_year} goal sheet.",
+    )
+
     return sheet
 
 @router.post(
@@ -442,6 +449,7 @@ async def reject_sheet(
     body: GoalSheetApprovalRequest,
     current_user: Annotated[CurrentUser, Depends(require_manager)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    background_tasks: BackgroundTasks,
 ):
     result = await db.execute(
         select(GoalSheet)
@@ -478,6 +486,11 @@ async def reject_sheet(
         reason=body.reason,
     )
 
+    background_tasks.add_task(
+        send_webhook_notification,
+        f"\u274c *Goal Sheet Rejected*: {current_user.full_name} rejected the {sheet.financial_year} goal sheet. Reason: {body.reason}",
+    )
+
     return sheet
 
 @router.post(
@@ -490,6 +503,7 @@ async def unlock_sheet(
     body: GoalSheetUnlockRequest,
     current_user: Annotated[CurrentUser, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    background_tasks: BackgroundTasks,
 ):
     result = await db.execute(
         select(GoalSheet)
@@ -523,6 +537,11 @@ async def unlock_sheet(
             "status": {"old": old_status, "new": "draft"}
         },
         reason=body.reason,
+    )
+
+    background_tasks.add_task(
+        send_webhook_notification,
+        f"\U0001f513 *Goal Sheet Unlocked*: {current_user.full_name} unlocked the {sheet.financial_year} goal sheet back to draft. Reason: {body.reason}",
     )
 
     return sheet
