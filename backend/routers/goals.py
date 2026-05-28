@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,7 +16,7 @@ from models.goal_sheet import GoalSheet
 from models.achievement import Achievement
 from models.user import User
 from models.enums import GoalSheetStatus, UserRole
-from schemas.goal import GoalCreate, GoalUpdate, GoalResponse, PushGoalRequest, PushGoalResponse
+from schemas.goal import GoalCreate, GoalUpdate, GoalResponse, GoalLineageResponse, PushGoalRequest, PushGoalResponse
 from schemas.goal_sheet import (
     GoalSheetCreate, GoalSheetResponse, GoalSheetSubmitResponse,
     GoalSheetApprovalRequest, GoalSheetUnlockRequest,
@@ -238,15 +238,28 @@ async def update_goal(
     update_data.pop("reason", None)  
 
     if goal.is_title_locked and "title" in update_data:
-        raise HTTPException(
-            status_code=422,
-            detail={"detail": "Title is locked for this shared KPI.", "code": "TITLE_LOCKED"},
-        )
-    if goal.is_target_locked and ("target_value" in update_data or "target_date" in update_data):
-        raise HTTPException(
-            status_code=422,
-            detail={"detail": "Target is locked for this shared KPI.", "code": "TARGET_LOCKED"},
-        )
+        if update_data["title"] != goal.title:
+            raise HTTPException(
+                status_code=422,
+                detail={"detail": "Title is locked for this shared KPI.", "code": "TITLE_LOCKED"},
+            )
+        update_data.pop("title")
+
+    if goal.is_target_locked:
+        if "target_value" in update_data and update_data["target_value"] is not None:
+            if Decimal(str(update_data["target_value"])) != goal.target_value:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"detail": "Target is locked for this shared KPI.", "code": "TARGET_LOCKED"},
+                )
+        if "target_date" in update_data and update_data["target_date"] != goal.target_date:
+            raise HTTPException(
+                status_code=422,
+                detail={"detail": "Target date is locked for this shared KPI.", "code": "TARGET_LOCKED"},
+            )
+        
+        update_data.pop("target_value", None)
+        update_data.pop("target_date", None)
 
     old_values = {k: getattr(goal, k) for k in update_data}
     for key, value in update_data.items():
@@ -514,6 +527,54 @@ async def unlock_sheet(
 
     return sheet
 
+
+@router.get(
+    "/{sheet_id}/goals/{goal_id}/lineage",
+    response_model=list[GoalLineageResponse],
+    summary="Get the cascading OKR lineage for a goal",
+)
+async def get_goal_lineage(
+    sheet_id: uuid.UUID,
+    goal_id: uuid.UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Walk up the parent_goal_id chain from the given goal to the root ancestor.
+
+    Returns the lineage path ordered root → leaf (organizational objective first,
+    employee target last).
+    """
+    # Verify the goal exists and belongs to the specified sheet
+    goal_result = await db.execute(
+        select(Goal).where(Goal.id == goal_id, Goal.sheet_id == sheet_id)
+    )
+    goal = goal_result.scalar_one_or_none()
+    if goal is None:
+        raise HTTPException(status_code=404, detail="Goal not found in this sheet.")
+
+    # Recursive CTE: walk up from goal_id → root (parent_goal_id IS NULL)
+    cte_query = text("""
+        WITH RECURSIVE lineage AS (
+            SELECT id, title, thrust_area, weightage, parent_goal_id
+            FROM goals
+            WHERE id = :goal_id
+          UNION ALL
+            SELECT g.id, g.title, g.thrust_area, g.weightage, g.parent_goal_id
+            FROM goals g
+            INNER JOIN lineage l ON g.id = l.parent_goal_id
+        )
+        SELECT id, title, thrust_area, weightage, parent_goal_id
+        FROM lineage
+    """)
+
+    result = await db.execute(cte_query, {"goal_id": goal_id})
+    rows = result.mappings().all()
+
+    # Rows arrive leaf-first; reverse for root → leaf presentation order
+    lineage = list(reversed(rows))
+    return lineage
+
+
 push_router = APIRouter(prefix="/admin", tags=["Admin — Goals"])
 
 @push_router.post(
@@ -537,6 +598,9 @@ async def push_goal(
         weightage=Decimal("10.00"),  
         order_index=0,
     )
+
+    db.add(master_goal)
+    await db.flush()
 
     pushed_count = 0
     failed = []

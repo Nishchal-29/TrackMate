@@ -35,7 +35,7 @@ class Goal(Base):
     sheet_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("goal_sheets.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     thrust_area: Mapped[str] = mapped_column(

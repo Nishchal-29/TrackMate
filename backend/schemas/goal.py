@@ -97,3 +97,17 @@ class PushGoalResponse(BaseModel):
     pushed_to: int
     failed: list[dict] = []
     message: str
+
+
+class GoalLineageResponse(BaseModel):
+    """Simplified goal node in the hierarchy lineage path (root → leaf)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    thrust_area: str
+    weightage: Decimal
+    parent_goal_id: uuid.UUID | None = None
+
+class CascadeGoalRequest(BaseModel):
+    employee_ids: list[uuid.UUID]

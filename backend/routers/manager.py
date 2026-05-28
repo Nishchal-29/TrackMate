@@ -17,8 +17,9 @@ from models.goal_sheet import GoalSheet
 from models.achievement import Achievement
 from models.checkin import Checkin
 from models.quarterly_cycle import QuarterlyCycle
-from models.enums import UserRole
+from models.enums import UserRole, GoalSheetStatus
 from schemas.admin import TeamMemberStatus
+from schemas.goal import CascadeGoalRequest, PushGoalResponse
 from schemas.goal_sheet import GoalSheetResponse
 from schemas.checkin import CheckinCreate, CheckinResponse
 from schemas.user import CurrentUser
@@ -191,4 +192,109 @@ async def create_checkin(
         authored_by=checkin.authored_by,
         author_name=current_user.full_name,
         created_at=checkin.created_at,
+    )
+
+@router.post(
+    "/goals/{goal_id}/cascade",
+    response_model=PushGoalResponse,
+    summary="Cascade a manager's goal to direct reports",
+)
+async def cascade_goal(
+    goal_id: uuid.UUID,
+    body: CascadeGoalRequest,
+    current_user: Annotated[CurrentUser, Depends(require_manager)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    # 1. Fetch the Manager's Goal to ensure they own it
+    result = await db.execute(
+        select(Goal)
+        .join(GoalSheet, GoalSheet.id == Goal.sheet_id)
+        .where(Goal.id == goal_id, GoalSheet.employee_id == current_user.id)
+    )
+    manager_goal = result.scalar_one_or_none()
+    
+    if not manager_goal:
+        raise HTTPException(status_code=404, detail="Goal not found or you do not own it.")
+
+    # 2. Fetch the Manager's Goal Sheet to get the financial year
+    sheet_result = await db.execute(select(GoalSheet).where(GoalSheet.id == manager_goal.sheet_id))
+    manager_sheet = sheet_result.scalar_one()
+
+    cascaded_count = 0
+    failed = []
+
+    # 3. Cascade to the selected employees
+    for employee_id in body.employee_ids:
+        try:
+            # Verify this employee actually reports to this manager
+            emp_result = await db.execute(select(User).where(User.id == employee_id))
+            employee = emp_result.scalar_one_or_none()
+            
+            if not employee or employee.manager_id != current_user.id:
+                failed.append({"employee_id": str(employee_id), "reason": "Not a direct report."})
+                continue
+
+            # Find or create the employee's draft sheet
+            draft_result = await db.execute(
+                select(GoalSheet).where(
+                    GoalSheet.employee_id == employee_id,
+                    GoalSheet.financial_year == manager_sheet.financial_year,
+                    GoalSheet.status == GoalSheetStatus.draft,
+                )
+            )
+            emp_sheet = draft_result.scalar_one_or_none()
+
+            if emp_sheet is None:
+                emp_sheet = GoalSheet(
+                    employee_id=employee_id,
+                    financial_year=manager_sheet.financial_year,
+                    status=GoalSheetStatus.draft,
+                )
+                db.add(emp_sheet)
+                await db.flush()
+
+            # Check if employee has room for more goals (Max 8)
+            count_result = await db.execute(
+                select(func.count(Goal.id)).where(Goal.sheet_id == emp_sheet.id)
+            )
+            if count_result.scalar_one() >= 8:
+                failed.append({"employee_id": str(employee_id), "reason": "Employee sheet is full."})
+                continue
+
+            # Check if this goal was already cascaded to them
+            existing_child = await db.execute(
+                select(Goal).where(Goal.sheet_id == emp_sheet.id, Goal.parent_goal_id == manager_goal.id)
+            )
+            if existing_child.scalar_one_or_none():
+                failed.append({"employee_id": str(employee_id), "reason": "Goal already cascaded to this employee."})
+                continue
+
+            # 4. Create the child goal
+            child_goal = Goal(
+                sheet_id=emp_sheet.id,
+                thrust_area=manager_goal.thrust_area,
+                title=manager_goal.title,
+                description=f"Cascaded from Manager: {manager_goal.description}",
+                uom_type=manager_goal.uom_type,
+                target_value=manager_goal.target_value, # Employee might be expected to hit a fraction of the manager's total
+                target_date=manager_goal.target_date,
+                weightage=Decimal("10.00"),  
+                order_index=0, 
+                parent_goal_id=manager_goal.id,  # LINK IT TO THE MANAGER'S GOAL!
+                is_title_locked=True,
+                is_target_locked=False, # Allow employee to adjust their specific portion of the target
+            )
+            db.add(child_goal)
+            cascaded_count += 1
+
+        except Exception as e:
+            failed.append({"employee_id": str(employee_id), "reason": str(e)})
+
+    await db.flush()
+
+    return PushGoalResponse(
+        master_goal_id=manager_goal.id,
+        pushed_to=cascaded_count,
+        failed=failed,
+        message=f"Goal successfully cascaded to {cascaded_count} team members.",
     )
