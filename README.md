@@ -166,7 +166,7 @@ Organizations face critical challenges in goal management:
 ### Cascading OKRs / Goal Hierarchy
 - **Parent-Child Goal Links** — Goals pushed by admins or cascaded by managers maintain a `parent_goal_id` link back to the source goal
 - **Recursive Lineage API** — PostgreSQL Recursive CTE walks up the `parent_goal_id` chain to build the full ancestry path from organizational objective → manager key result → employee target
-- **Visual Lineage Tracker** — Inline breadcrumb-style UI in the Goal Editor shows the full alignment chain with contextual icons (🏢 Org → 👥 Manager → 🎯 Employee) and gradient-highlighted current goal
+- **Visual Lineage Tracker** — Inline breadcrumb-style UI in the Goal Editor shows the full alignment chain with contextual icons (Org → Manager → Employee) and gradient-highlighted current goal
 - **Alignment Badges** — Goals that are part of a hierarchy display an "Aligned" badge on the Dashboard and an "Alignment" toggle in the Goal Editor
 - **Manager Cascade Flow** — Managers can cascade any of their own goals to selected direct reports via a modal with employee picker, creating linked child goals automatically
 
